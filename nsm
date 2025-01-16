@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Get the directory where nsm.py is located
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" && pwd )"
+
+# Define virtual environment path
+VENV_DIR="$SCRIPT_DIR/.venv"
+
+# Create virtual environment if it doesn't exist
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv "$VENV_DIR"
+    source "$VENV_DIR/bin/activate"
+    pip install uv
+    uv pip install -e "$SCRIPT_DIR"
+else
+    source "$VENV_DIR/bin/activate"
+fi
+
+# Run the Python script with all arguments passed through
+uv run "$SCRIPT_DIR/nsm.py" "$@" 
