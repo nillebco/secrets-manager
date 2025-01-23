@@ -6,8 +6,6 @@ from typing import Optional, Literal, Dict
 @dataclass
 class ProviderConfig:
     type: Literal["bitwarden", "google"]
-    org: Optional[str] = None  # For Bitwarden
-    project_id: Optional[str] = None  # For Google Secrets Manager
 
 @dataclass
 class Configuration:

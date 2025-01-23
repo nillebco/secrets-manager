@@ -48,21 +48,20 @@ class BaseManager:
         if not provider_config:
             return
 
-        if provider_config.type == "bitwarden" and provider_config.org:
-            self.current_client = BitwardenClient(provider_config.org)
+        if provider_config.type == "bitwarden":
+            self.current_client = BitwardenClient(self.config.current_provider)
         elif provider_config.type == "google":
             self.current_client = GoogleSecretsManager()
 
 
 class ProviderCommands(BaseManager):
-    def add(self, name: str, provider: str, identifier: Optional[str] = None) -> None:
+    def add(self, name: str, provider: str) -> None:
         """
         Add a new provider configuration.
 
         Args:
             name: Name to identify this provider configuration
             provider: Either 'bitwarden' or 'google'
-            identifier: Organization ID for Bitwarden, or Project ID for Google. Optional for Google.
         """
         if provider not in ["bitwarden", "google"]:
             print("Error: Provider must be either 'bitwarden' or 'google'")
@@ -80,12 +79,9 @@ class ProviderCommands(BaseManager):
                 sys.exit(1)
 
         if provider == "bitwarden":
-            if not identifier:
-                print("Error: Organization ID is required for Bitwarden provider")
-                sys.exit(1)
-            self.config.add_provider(name, provider, org=identifier)
+            self.config.add_provider(name, provider, org=name)
         else:  # google
-            self.config.add_provider(name, provider, project_id=identifier)
+            self.config.add_provider(name, provider)
 
         if not self.config.current_provider:
             self.config.current_provider = name
@@ -118,9 +114,9 @@ class ProviderCommands(BaseManager):
         for name, provider in self.config.providers.items():
             current = "*" if name == self.config.current_provider else " "
             if provider.type == "bitwarden":
-                print(f"{current} {name}: bitwarden (org: {provider.org})")
+                print(f"{current} {name}: bitwarden")
             else:
-                print(f"{current} {name}: google (project: {provider.project_id})")
+                print(f"{current} {name}: google")
 
 
 class SecretsCommands(BaseManager):
