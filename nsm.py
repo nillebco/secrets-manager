@@ -68,6 +68,17 @@ class ProviderCommands(BaseManager):
             print("Error: Provider must be either 'bitwarden' or 'google'")
             sys.exit(1)
 
+        # Check if a Google provider already exists
+        if provider == "google":
+            existing_google = [
+                name for name, p in self.config.providers.items() 
+                if p.type == "google"
+            ]
+            if existing_google:
+                print(f"Error: A Google provider already exists: {existing_google[0]}")
+                print("Only one Google provider is allowed.")
+                sys.exit(1)
+
         if provider == "bitwarden":
             if not identifier:
                 print("Error: Organization ID is required for Bitwarden provider")
