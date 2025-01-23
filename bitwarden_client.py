@@ -104,8 +104,24 @@ class BitwardenClient(SecretsManager):
         )
         return json.loads(result.stdout)
 
-    def get_secret(self, name: str) -> Optional[str]:
-        secrets = self.list_secrets()
+    def get_secret(self, name: str, project_id: Optional[str] = None) -> Optional[str]:
+        """
+        Retrieve a secret by its name.
+        
+        Args:
+            name: The name/key of the secret to retrieve
+            project_id: Optional project name or ID to get the secret from
+        """
+        # If project_id is provided, resolve it if it's a name
+        if project_id and not project_id.count("-") == 4:  # Simple UUID check
+            resolved_id = self._resolve_project_id(project_id)
+            if resolved_id:
+                project_id = resolved_id
+            else:
+                raise ValueError(f"Project '{project_id}' not found")
+        
+        # Get secrets from the specific project or all secrets if no project specified
+        secrets = self.list_secrets(project_id)
         for secret in secrets:
             if secret["key"] == name:
                 return secret["value"]

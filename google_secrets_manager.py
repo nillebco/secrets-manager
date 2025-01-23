@@ -28,13 +28,16 @@ class GoogleSecretsManager(SecretsManager):
         """Format the secret name to match Google Secret Manager requirements."""
         return f"projects/{self.project_id}/secrets/{name}"
         
-    def get_secret(self, name: str) -> Optional[str]:
+    def get_secret(self, name: str, project_id: Optional[str] = None) -> Optional[str]:
         """Retrieve a secret by its name."""
         try:
+            # If project_id is provided, use it instead of the default one
+            target_project = project_id or self.project_id
+            
             result = subprocess.run(
                 ["gcloud", "secrets", "versions", "access", "latest", 
                  "--secret", name,
-                 "--project", self.project_id],
+                 "--project", target_project],
                 check=True,
                 capture_output=True,
                 text=True

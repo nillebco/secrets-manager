@@ -6,12 +6,13 @@ class SecretsManager(ABC):
     """Abstract base class defining the interface for a secrets manager."""
     
     @abstractmethod
-    def get_secret(self, name: str) -> Optional[str]:
+    def get_secret(self, name: str, project_id: Optional[str] = None) -> Optional[str]:
         """
         Retrieve a secret by its name.
         
         Args:
             name: The name/key of the secret to retrieve
+            project_id: Optional project ID to get the secret from
             
         Returns:
             The secret value if found, None otherwise
