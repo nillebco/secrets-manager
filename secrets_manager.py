@@ -34,10 +34,13 @@ class SecretsManager(ABC):
         pass
     
     @abstractmethod
-    def list_secrets(self) -> list[Dict[str, Any]]:
+    def list_secrets(self, project_id: Optional[str] = None) -> list[Dict[str, Any]]:
         """
         List all available secrets with their metadata.
         
+        Args:
+            project_id: Optional project ID to filter secrets by
+            
         Returns:
             List of dictionaries containing secret information (excluding values)
         """

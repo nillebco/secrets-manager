@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 import json
 import os
-from typing import Optional
+from typing import Optional, Literal
 
 
 @dataclass
 class Configuration:
+    provider: Optional[Literal["bitwarden", "google"]] = None
     org: Optional[str] = None
+    project_id: Optional[str] = None
 
     @classmethod
     def load(cls, file_path: str) -> "Configuration":

@@ -63,8 +63,42 @@ class BitwardenClient(SecretsManager):
         )
         return json.loads(result.stdout)
 
-    def list_secrets(self) -> list[Dict[str, Any]]:
+    def _resolve_project_id(self, project_name: str) -> Optional[str]:
+        """
+        Resolve a project name to its ID using the local project list.
+        
+        Args:
+            project_name: The name of the project to resolve
+            
+        Returns:
+            The project ID if found, None otherwise
+        """
+        projects = self.get_projects()
+        for project in projects:
+            if project["name"] == project_name:
+                return project["id"]
+        return None
+
+    def list_secrets(self, project_id: Optional[str] = None) -> list[Dict[str, Any]]:
+        """
+        List all secrets with optional project filtering.
+        
+        Args:
+            project_id: Optional project name or ID to filter secrets by
+        """
         cmd = f"bws --access-token {self.get_access_token()} secret list"
+        
+        if project_id:
+            # Try to resolve the project name to an ID if it's not already an ID format
+            if not project_id.count("-") == 4:  # Simple UUID check
+                resolved_id = self._resolve_project_id(project_id)
+                if resolved_id:
+                    project_id = resolved_id
+                else:
+                    raise ValueError(f"Project '{project_id}' not found")
+            
+            cmd += f" {project_id}"
+            
         result = subprocess.run(
             cmd, shell=True, check=True, capture_output=True, text=True
         )

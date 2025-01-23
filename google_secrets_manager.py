@@ -81,13 +81,16 @@ class GoogleSecretsManager(SecretsManager):
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to store secret: {e}")
             
-    def list_secrets(self) -> list[Dict[str, Any]]:
+    def list_secrets(self, project_id: Optional[str] = None) -> list[Dict[str, Any]]:
         """List all available secrets with their metadata."""
         try:
+            # If project_id is provided, use it instead of the default one
+            target_project = project_id or self.project_id
+            
             result = subprocess.run(
                 ["gcloud", "secrets", "list",
                  "--format=json",
-                 "--project", self.project_id],
+                 "--project", target_project],
                 check=True,
                 capture_output=True,
                 text=True
@@ -98,7 +101,7 @@ class GoogleSecretsManager(SecretsManager):
                     "name": secret["name"].split("/")[-1],
                     "metadata": secret.get("labels", {}),
                     "create_time": secret.get("createTime"),
-                    "project_id": self.project_id
+                    "project_id": target_project
                 }
                 for secret in secrets
             ]
