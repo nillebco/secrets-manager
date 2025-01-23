@@ -1,92 +1,91 @@
 from fire import Fire
 import os
-import json
-import socket
-from datetime import datetime
 import sys
-import subprocess
-from typing import Optional
+from bitwarden_client import BitwardenClient
+from configuration import Configuration
+from functools import wraps
+from typing import Callable, TypeVar, Any
+
+T = TypeVar('T')
+
+def require_org(f: Callable[..., T]) -> Callable[..., T]:
+    @wraps(f)
+    def wrapper(self: 'NillebCoSecretsManager', *args: Any, **kwargs: Any) -> T:
+        if not self.bw_client:
+            print("Error: Organization not set. Please run 'nsm set_org <org>' first.")
+            sys.exit(1)
+        return f(self, *args, **kwargs)
+    return wrapper
 
 
 class NillebCoSecretsManager:
     def __init__(self):
         self.conf_file = os.path.expanduser("~/.nsm.json")
-        self.conf = {}
-        if os.path.exists(self.conf_file):
-            with open(self.conf_file, "r") as f:
-                self.conf = json.load(f)
+        self.config = Configuration.load(self.conf_file)
+        self.bw_client = None
+        if self.config.org:
+            self.bw_client = BitwardenClient(self.config.org)
 
     def set_org(self, org: str):
-        self.conf["org"] = org
-        with open(self.conf_file, "w") as f:
-            json.dump(self.conf, f)
+        self.config.org = org
+        self.config.save(self.conf_file)
+        self.bw_client = BitwardenClient(org)
 
-    def get_bws_access_token(self):
-        host_name = socket.gethostname()
-        host_name = host_name.replace(".local", "")
-        suffix = datetime.now().year
-        secret_name = f"bws-{self.conf['org']}-{host_name}-{suffix}"
-        secret_value = os.popen(
-            f"security find-generic-password -a none -s {secret_name} -w"
-        ).read()
-        return secret_value.rstrip()
-
+    @require_org
     def wrap_bws(self, *args, **kwargs):
-        args = [f'"{arg}"' for arg in sys.argv[2:]]
-        cmd = f"bws --access-token {self.get_bws_access_token()} {' '.join(args)}"
         try:
-            subprocess.run(cmd, shell=True, check=True)
-        except subprocess.CalledProcessError as e:
-            sys.exit(e.returncode)
+            self.bw_client.execute_command(*sys.argv[2:])
+        except Exception:
+            sys.exit(1)
 
-    def _organizations(self):
-        cmd = f"bws --access-token {self.get_bws_access_token()} project list"
-        result = subprocess.run(
-            cmd, shell=True, check=True, capture_output=True, text=True
-        )
-        projects = json.loads(result.stdout)
-        organizations = list(set([project["organizationId"] for project in projects]))
-        return organizations
-
+    @require_org
     def organizations(self):
-        for organization in self._organizations():
+        for organization in self.bw_client.get_organizations():
             print(f"{organization}")
 
-    def _projects(self):
-        cmd = f"bws --access-token {self.get_bws_access_token()} project list"
-        result = subprocess.run(
-            cmd, shell=True, check=True, capture_output=True, text=True
-        )
-        projects = json.loads(result.stdout)
-        return projects
-
+    @require_org
     def projects(self):
-        projects = self._projects()
+        projects = self.bw_client.get_projects()
         for project in projects:
             print(
                 f"{project['name']} ({project['id']}) (orgId: {project['organizationId']})"
             )
 
-    def _secrets(self):
-        cmd = f"bws --access-token {self.get_bws_access_token()} secret list"
-        result = subprocess.run(
-            cmd, shell=True, check=True, capture_output=True, text=True
-        )
-        secrets = json.loads(result.stdout)
-        return secrets
-
+    @require_org
     def secrets(self):
-        for secret in self._secrets():
+        for secret in self.bw_client.list_secrets():
             print(
                 f"{secret['key']} ({secret['id']}) (projectId: {secret['projectId']})"
             )
 
+    @require_org
     def secret_value(self, name: str):
-        secrets = self._secrets()
-        for secret in secrets:
-            if secret["key"] == name:
-                return secret["value"]
-        return None
+        return self.bw_client.get_secret(name)
+
+    @require_org
+    def store_secret(self, name: str, value: str):
+        """Store a secret in the secrets manager."""
+        return self.bw_client.store_secret(name, value)
+
+    @require_org
+    def delete_secret(self, name: str):
+        """Delete a secret from the secrets manager."""
+        if self.bw_client.delete_secret(name):
+            print(f"Secret '{name}' deleted successfully")
+        else:
+            print(f"Secret '{name}' not found")
+
+    @require_org
+    def set_access_token(self, token: str):
+        """
+        Set the Bitwarden access token in the system keychain.
+        
+        Args:
+            token: The access token to store
+        """
+        self.bw_client.set_access_token(token)
+        print("Access token stored successfully")
+
 
 if __name__ == "__main__":
     Fire(NillebCoSecretsManager, name="nsm")
