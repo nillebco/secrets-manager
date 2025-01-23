@@ -39,8 +39,14 @@ class BaseManager:
         else:
             self.conf_file = conf_file or os.path.expanduser("~/.nsm.json")
             self.config = Configuration.load(self.conf_file)
+            self._set_restrictive_permissions()
         self.current_client = None
         self._initialize_client()
+
+    def _set_restrictive_permissions(self) -> None:
+        """Set restrictive file permissions (600) on the configuration file."""
+        if os.path.exists(self.conf_file):
+            os.chmod(self.conf_file, 0o600)  # Read/write for owner only
 
     def _initialize_client(self) -> None:
         """Initialize the appropriate secrets manager client based on configuration."""
@@ -87,6 +93,7 @@ class ProviderCommands(BaseManager):
             self.config.current_provider = name
 
         self.config.save(self.conf_file)
+        self._set_restrictive_permissions()
         print(f"Provider '{name}' added successfully")
 
     def use(self, name: str) -> None:
@@ -102,6 +109,7 @@ class ProviderCommands(BaseManager):
 
         self.config.current_provider = name
         self.config.save(self.conf_file)
+        self._set_restrictive_permissions()
         self._initialize_client()
         print(f"Now using provider '{name}'")
 
