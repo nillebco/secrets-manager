@@ -1,21 +1,23 @@
 import json
 import subprocess
 from typing import Optional, Any, Dict
-from secrets_manager import SecretsManager
+from secrets_manager import Organization, SecretsManager, Project
 
 
 class GoogleSecretsManager(SecretsManager):
     """Implementation of SecretsManager using Google Cloud Secret Manager via gcloud CLI."""
     
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: Optional[str] = None):
         """
         Initialize the Google Secrets Manager client.
         
         Args:
-            project_id: The Google Cloud project ID
+            project_id: The Google Cloud project ID. If not provided, uses the default from gcloud config.
         """
-        self.project_id = project_id
         self._verify_gcloud_installation()
+        self.project_id = project_id or self._get_default_project()
+        if not self.project_id:
+            raise RuntimeError("No project ID provided and no default project set in gcloud config")
         
     def _verify_gcloud_installation(self) -> None:
         """Verify that gcloud CLI is installed and configured."""
@@ -23,6 +25,20 @@ class GoogleSecretsManager(SecretsManager):
             subprocess.run(["gcloud", "--version"], check=True, capture_output=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise RuntimeError("gcloud CLI is not installed or not in PATH")
+
+    def _get_default_project(self) -> Optional[str]:
+        """Get the default project from gcloud config."""
+        try:
+            result = subprocess.run(
+                ["gcloud", "config", "get-value", "project"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            project = result.stdout.strip()
+            return project if project else None
+        except subprocess.CalledProcessError:
+            return None
             
     def _format_secret_name(self, name: str) -> str:
         """Format the secret name to match Google Secret Manager requirements."""
@@ -123,4 +139,43 @@ class GoogleSecretsManager(SecretsManager):
             )
             return True
         except subprocess.CalledProcessError:
-            return False 
+            return False
+
+    def list_projects(self) -> list[Project]:
+        """
+        List all available GCP projects in the organization.
+        
+        Returns:
+            A list of Project objects containing project information
+        """
+        try:
+            result = subprocess.run(
+                ["gcloud", "projects", "list",
+                 "--filter=parent.type=organization",
+                 "--format=json"],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            projects = json.loads(result.stdout)
+            return [
+                Project(
+                    name=project.get("name"),
+                    id=project.get("projectId"),
+                    organization_id=project.get("parent", {}).get("id")
+                )
+                for project in projects
+            ]
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to list projects: {e}") 
+        
+    def list_organizations(self) -> list[Organization]:
+        result = subprocess.run(
+            ["gcloud", "organizations", "list", "--format=json"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        organizations = json.loads(result.stdout)
+        print(organizations)
+        return [Organization(id=org["name"], name=org["displayName"]) for org in organizations]

@@ -4,7 +4,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 import socket
 import os
-from secrets_manager import SecretsManager
+from secrets_manager import SecretsManager, Project, Organization
 
 
 class BitwardenClient(SecretsManager):
@@ -48,20 +48,35 @@ class BitwardenClient(SecretsManager):
         except subprocess.CalledProcessError as e:
             raise e
 
-    def get_organizations(self) -> List[str]:
+    def list_organizations(self) -> List[Organization]:
         cmd = f"bws --access-token {self.get_access_token()} project list"
         result = subprocess.run(
             cmd, shell=True, check=True, capture_output=True, text=True
         )
         projects = json.loads(result.stdout)
-        return list(set([project["organizationId"] for project in projects]))
+        return [
+            Organization(
+                id=project["organizationId"],
+                name=self.org
+            )
+            for project in projects
+        ]
 
-    def get_projects(self) -> List[Dict]:
+    def list_projects(self) -> List[Project]:
         cmd = f"bws --access-token {self.get_access_token()} project list"
         result = subprocess.run(
             cmd, shell=True, check=True, capture_output=True, text=True
         )
-        return json.loads(result.stdout)
+        projects_dicts = json.loads(result.stdout)
+        return [
+            Project(
+                name=project.get("name"),
+                id=project.get("id"),
+                organization_id=project.get("organizationId")
+            )
+            for project in projects_dicts
+        ]
+
 
     def _resolve_project_id(self, project_name: str) -> Optional[str]:
         """

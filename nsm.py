@@ -5,17 +5,17 @@ from bitwarden_client import BitwardenClient
 from google_secrets_manager import GoogleSecretsManager
 from configuration import Configuration
 from functools import wraps
-from typing import Callable, TypeVar, Any, Optional, Union
+from typing import Callable, TypeVar, Any, Optional
 
 T = TypeVar("T")
 
 
 def require_provider(f: Callable[..., T]) -> Callable[..., T]:
     @wraps(f)
-    def wrapper(self: "NillebCoSecretsManager", *args: Any, **kwargs: Any) -> T:
+    def wrapper(self: "BaseManager", *args: Any, **kwargs: Any) -> T:
         if not self.current_client:
             print(
-                "Error: Provider not set. Please run 'nsm set_provider <bitwarden|google>' first."
+                "Error: Provider not set. Please run 'nsm provider use <name>' first."
             )
             sys.exit(1)
         return f(self, *args, **kwargs)
@@ -23,10 +23,22 @@ def require_provider(f: Callable[..., T]) -> Callable[..., T]:
     return wrapper
 
 
-class NillebCoSecretsManager:
-    def __init__(self):
-        self.conf_file = os.path.expanduser("~/.nsm.json")
-        self.config = Configuration.load(self.conf_file)
+class BaseManager:
+    """Base class for all manager classes providing configuration and client management."""
+    def __init__(self, conf_file: Optional[str] = None, config: Optional[Configuration] = None):
+        """
+        Initialize the base manager.
+        
+        Args:
+            conf_file: Path to the configuration file. If not provided, uses default.
+            config: Configuration object. If provided, uses this instead of loading from file.
+        """
+        if config:
+            self.config = config
+            self.conf_file = conf_file or os.path.expanduser("~/.nsm.json")
+        else:
+            self.conf_file = conf_file or os.path.expanduser("~/.nsm.json")
+            self.config = Configuration.load(self.conf_file)
         self.current_client = None
         self._initialize_client()
 
@@ -38,23 +50,28 @@ class NillebCoSecretsManager:
 
         if provider_config.type == "bitwarden" and provider_config.org:
             self.current_client = BitwardenClient(provider_config.org)
-        elif provider_config.type == "google" and provider_config.project_id:
-            self.current_client = GoogleSecretsManager(provider_config.project_id)
+        elif provider_config.type == "google":
+            self.current_client = GoogleSecretsManager()
 
-    def add_provider(self, name: str, provider: str, identifier: str) -> None:
+
+class ProviderCommands(BaseManager):
+    def add(self, name: str, provider: str, identifier: Optional[str] = None) -> None:
         """
         Add a new provider configuration.
 
         Args:
             name: Name to identify this provider configuration
             provider: Either 'bitwarden' or 'google'
-            identifier: Organization ID for Bitwarden, or Project ID for Google
+            identifier: Organization ID for Bitwarden, or Project ID for Google. Optional for Google.
         """
         if provider not in ["bitwarden", "google"]:
             print("Error: Provider must be either 'bitwarden' or 'google'")
             sys.exit(1)
 
         if provider == "bitwarden":
+            if not identifier:
+                print("Error: Organization ID is required for Bitwarden provider")
+                sys.exit(1)
             self.config.add_provider(name, provider, org=identifier)
         else:  # google
             self.config.add_provider(name, provider, project_id=identifier)
@@ -65,7 +82,7 @@ class NillebCoSecretsManager:
         self.config.save(self.conf_file)
         print(f"Provider '{name}' added successfully")
 
-    def use_provider(self, name: str) -> None:
+    def use(self, name: str) -> None:
         """
         Switch to using a specific provider configuration.
 
@@ -81,7 +98,7 @@ class NillebCoSecretsManager:
         self._initialize_client()
         print(f"Now using provider '{name}'")
 
-    def list_providers(self) -> None:
+    def list(self) -> None:
         """List all configured providers."""
         if not self.config.providers:
             print("No providers configured")
@@ -94,8 +111,10 @@ class NillebCoSecretsManager:
             else:
                 print(f"{current} {name}: google (project: {provider.project_id})")
 
+
+class SecretsCommands(BaseManager):
     @require_provider
-    def secrets(self, project_id: Optional[str] = None) -> None:
+    def list(self, project_id: Optional[str] = None) -> None:
         """
         List all secrets in the current provider.
 
@@ -113,9 +132,7 @@ class NillebCoSecretsManager:
                 )
 
     @require_provider
-    def secret_value(
-        self, name: str, project_id: Optional[str] = None
-    ) -> Optional[str]:
+    def get(self, name: str, project_id: Optional[str] = None) -> Optional[str]:
         """
         Get the value of a secret.
 
@@ -130,20 +147,51 @@ class NillebCoSecretsManager:
         return value
 
     @require_provider
-    def store_secret(
-        self, name: str, value: str, metadata: Optional[dict] = None
-    ) -> None:
-        """Store a secret in the current provider."""
+    def set(self, name: str, value: str, metadata: Optional[dict] = None) -> None:
+        """
+        Store a secret in the current provider.
+
+        Args:
+            name: The name of the secret to store
+            value: The value to store
+            metadata: Optional metadata to store with the secret
+        """
         self.current_client.store_secret(name, value, metadata)
         print(f"Secret '{name}' stored successfully")
 
     @require_provider
-    def delete_secret(self, name: str) -> None:
-        """Delete a secret from the current provider."""
+    def delete(self, name: str) -> None:
+        """
+        Delete a secret from the current provider.
+
+        Args:
+            name: The name of the secret to delete
+        """
         if self.current_client.delete_secret(name):
             print(f"Secret '{name}' deleted successfully")
         else:
             print(f"Secret '{name}' not found")
+
+
+class NillebCoSecretsManager(BaseManager):
+    @require_provider
+    def projects(self) -> None:
+        """List projects."""
+        projects = self.current_client.list_projects()
+        for project in projects:
+            print(f"{project.name} ({project.id}) (orgId: {project.organization_id})")
+
+    @require_provider
+    def organizations(self) -> None:
+        """List organizations (Bitwarden-specific)."""
+        for organization in self.current_client.list_organizations():
+            print(f"{organization.name} ({organization.id})")
+
+    def provider(self) -> ProviderCommands:
+        return ProviderCommands(config=self.config, conf_file=self.conf_file)
+
+    def secret(self) -> SecretsCommands:
+        return SecretsCommands(config=self.config, conf_file=self.conf_file)
 
     # Bitwarden-specific commands
     def set_access_token(self, token: str) -> None:
@@ -153,27 +201,6 @@ class NillebCoSecretsManager:
             sys.exit(1)
         self.current_client.set_access_token(token)
         print("Access token stored successfully")
-
-    @require_provider
-    def organizations(self) -> None:
-        """List organizations (Bitwarden-specific)."""
-        if not isinstance(self.current_client, BitwardenClient):
-            print("Error: This command is only available for Bitwarden")
-            sys.exit(1)
-        for organization in self.current_client.get_organizations():
-            print(f"{organization}")
-
-    @require_provider
-    def projects(self) -> None:
-        """List projects (Bitwarden-specific)."""
-        if not isinstance(self.current_client, BitwardenClient):
-            print("Error: This command is only available for Bitwarden")
-            sys.exit(1)
-        projects = self.current_client.get_projects()
-        for project in projects:
-            print(
-                f"{project['name']} ({project['id']}) (orgId: {project['organizationId']})"
-            )
 
 
 def main():
