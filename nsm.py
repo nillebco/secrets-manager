@@ -3,12 +3,21 @@ import os
 import sys
 import json
 import subprocess
+import logging
 from bitwarden_client import BitwardenClient
 from google_secrets_manager import GoogleSecretsManager
-from passbolt_client import PassboltClient
+from passbolt_client import PassboltClient, PassboltCommandError
 from configuration import Configuration
 from functools import wraps
 from typing import Callable, TypeVar, Any, Optional, Dict
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(levelname)s: %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -20,9 +29,7 @@ def require_provider(f: Callable[..., T]) -> Callable[..., T]:
             # Try to initialize the client if not already done
             self._ensure_client_initialized()
             if not self.current_client:
-                print(
-                    "Error: Provider not set. Please run 'nsm provider use <name>' first."
-                )
+                logger.error("Provider not set. Please run 'nsm provider use <name>' first.")
                 sys.exit(1)
         return f(self, *args, **kwargs)
 
@@ -103,7 +110,7 @@ class ProviderCommands(BaseManager):
             organization_root_folder: Optional root folder ID for passbolt (limits project listing)
         """
         if provider not in ["bitwarden", "google", "passbolt"]:
-            print("Error: Provider must be either 'bitwarden', 'google', or 'passbolt'")
+            logger.error("Provider must be either 'bitwarden', 'google', or 'passbolt'")
             sys.exit(1)
 
         # Check if a Google provider already exists
@@ -112,8 +119,8 @@ class ProviderCommands(BaseManager):
                 name for name, p in self.config.providers.items() if p.type == "google"
             ]
             if existing_google:
-                print(f"Error: A Google provider already exists: {existing_google[0]}")
-                print("Only one Google provider is allowed.")
+                logger.error(f"A Google provider already exists: {existing_google[0]}")
+                logger.error("Only one Google provider is allowed.")
                 sys.exit(1)
 
         if provider == "bitwarden":
@@ -122,9 +129,7 @@ class ProviderCommands(BaseManager):
             self.config.add_provider(name, provider)
         elif provider == "passbolt":
             if not server or not private_key_file:
-                print(
-                    "Error: Passbolt provider requires both server and private_key_file arguments"
-                )
+                logger.error("Passbolt provider requires both server and private_key_file arguments")
                 sys.exit(1)
             
             # Get passphrase for configuration
@@ -133,7 +138,7 @@ class ProviderCommands(BaseManager):
                 import getpass
                 passphrase = getpass.getpass("Enter Passbolt passphrase: ")
                 if not passphrase:
-                    print("Error: Passphrase is required for Passbolt provider")
+                    logger.error("Passphrase is required for Passbolt provider")
                     sys.exit(1)
             
             # Configure Passbolt CLI
@@ -145,9 +150,9 @@ class ProviderCommands(BaseManager):
                     "--userPrivateKeyFile", private_key_file
                 ]
                 subprocess.run(cmd, check=True, capture_output=True, text=True)
-                print("Passbolt CLI configured successfully")
+                logger.info("Passbolt CLI configured successfully")
             except subprocess.CalledProcessError as e:
-                print(f"Error: Failed to configure Passbolt CLI: {e}")
+                logger.error(f"Failed to configure Passbolt CLI: {e}")
                 sys.exit(1)
             
             self.config.add_provider(
@@ -159,7 +164,7 @@ class ProviderCommands(BaseManager):
 
         self.config.save(self.conf_file)
         self._set_restrictive_permissions()
-        print(f"Provider '{name}' added successfully")
+        logger.info(f"Provider '{name}' added successfully")
 
     def use(self, name: str) -> None:
         """
@@ -169,29 +174,29 @@ class ProviderCommands(BaseManager):
             name: Name of the provider configuration to use
         """
         if name not in self.config.providers:
-            print(f"Error: Provider '{name}' not found")
+            logger.error(f"Provider '{name}' not found")
             sys.exit(1)
 
         self.config.current_provider = name
         self.config.save(self.conf_file)
         self._set_restrictive_permissions()
         self._initialize_client()
-        print(f"Now using provider '{name}'")
+        logger.info(f"Now using provider '{name}'")
 
     def list(self) -> None:
         """List all configured providers."""
         if not self.config.providers:
-            print("No providers configured")
+            logger.info("No providers configured")
             return
 
         for name, provider in self.config.providers.items():
             current = "*" if name == self.config.current_provider else " "
             if provider.type == "bitwarden":
-                print(f"{current} {name}: bitwarden")
+                logger.info(f"{current} {name}: bitwarden")
             elif provider.type == "google":
-                print(f"{current} {name}: google")
+                logger.info(f"{current} {name}: google")
             elif provider.type == "passbolt":
-                print(f"{current} {name}: passbolt ({provider.server})")
+                logger.info(f"{current} {name}: passbolt ({provider.server})")
 
     def remove(self, name: str) -> None:
         """
@@ -201,7 +206,7 @@ class ProviderCommands(BaseManager):
             name: Name of the provider configuration to remove
         """
         if name not in self.config.providers:
-            print(f"Error: Provider '{name}' not found")
+            logger.error(f"Provider '{name}' not found")
             sys.exit(1)
 
         # If this is the current provider, clear the current provider
@@ -211,19 +216,19 @@ class ProviderCommands(BaseManager):
         del self.config.providers[name]
         self.config.save(self.conf_file)
         self._set_restrictive_permissions()
-        print(f"Provider '{name}' removed successfully")
+        logger.info(f"Provider '{name}' removed successfully")
 
     def remove_all(self) -> None:
         """Remove all provider configurations."""
         if not self.config.providers:
-            print("No providers configured")
+            logger.info("No providers configured")
             return
 
         provider_count = len(self.config.providers)
         self.config.remove_all_providers()
         self.config.save(self.conf_file)
         self._set_restrictive_permissions()
-        print(f"Removed {provider_count} provider(s) successfully")
+        logger.info(f"Removed {provider_count} provider(s) successfully")
 
 
 class SecretsCommands(BaseManager):
@@ -237,15 +242,15 @@ class SecretsCommands(BaseManager):
         """
         for secret in self.current_client.list_secrets(project_id):
             if isinstance(self.current_client, BitwardenClient):
-                print(
+                logger.info(
                     f"{secret['key']} ({secret['id']}) (projectId: {secret['projectId']})"
                 )
             elif isinstance(self.current_client, PassboltClient):
-                print(
+                logger.info(
                     f"{secret['name']} ({secret['id']}) (folderId: {secret['folder_id']})"
                 )
             else:
-                print(
+                logger.info(
                     f"{secret['name']} (created: {secret['create_time']}) (projectId: {secret['project_id']})"
                 )
 
@@ -260,7 +265,7 @@ class SecretsCommands(BaseManager):
         """
         value = self.current_client.get_secret(name, project_id)
         if value is None:
-            print(f"Secret '{name}' not found")
+            logger.warning(f"Secret '{name}' not found")
             return None
         return value
 
@@ -275,7 +280,7 @@ class SecretsCommands(BaseManager):
             metadata: Optional metadata to store with the secret
         """
         self.current_client.store_secret(name, value, metadata)
-        print(f"Secret '{name}' stored successfully")
+        logger.info(f"Secret '{name}' stored successfully")
 
     @require_provider
     def delete(self, name: str) -> None:
@@ -286,9 +291,9 @@ class SecretsCommands(BaseManager):
             name: The name of the secret to delete
         """
         if self.current_client.delete_secret(name):
-            print(f"Secret '{name}' deleted successfully")
+            logger.info(f"Secret '{name}' deleted successfully")
         else:
-            print(f"Secret '{name}' not found")
+            logger.warning(f"Secret '{name}' not found")
 
 
 class PassboltCommands(BaseManager):
@@ -304,12 +309,12 @@ class PassboltCommands(BaseManager):
             parent_folder_id: Optional parent folder ID to filter by
         """
         if not isinstance(self.current_client, PassboltClient):
-            print("Error: This command is only available for Passbolt")
+            logger.error("This command is only available for Passbolt")
             sys.exit(1)
         
         folders = self.current_client.list_folders(name, parent_folder_id)
         for folder in folders:
-            print(f"{folder['name']} ({folder['id']}) (parent: {folder.get('folder_parent_id', 'root')})")
+            logger.info(f"{folder['name']} ({folder['id']}) (parent: {folder.get('folder_parent_id', 'root')})")
     
     @require_provider
     def get_or_create_folder(self, name: str, parent_folder_id: Optional[str] = None) -> None:
@@ -321,60 +326,86 @@ class PassboltCommands(BaseManager):
             parent_folder_id: Optional parent folder ID
         """
         if not isinstance(self.current_client, PassboltClient):
-            print("Error: This command is only available for Passbolt")
+            logger.error("This command is only available for Passbolt")
             sys.exit(1)
         
         folder = self.current_client.get_or_create_folder_by_name(name, parent_folder_id)
-        print(f"Folder: {folder['name']} ({folder['id']})")
+        logger.info(f"Folder: {folder['name']} ({folder['id']})")
 
 
 class ProjectSecretCommands(BaseManager):
     """Project secret management commands."""
     
     @require_provider
-    def add(self, file: str) -> None:
+    def add(self, file: str, force: bool = False) -> None:
         """
         Add a secret from a file to the current project.
         
         Args:
             file: Path to the file containing the secret
+            force: If True, overwrite existing secret with the same name
         """
         if not isinstance(self.current_client, PassboltClient):
-            print("Error: Secret addition is currently only supported for Passbolt")
+            logger.error("Secret addition is currently only supported for Passbolt")
             sys.exit(1)
         
         # Read the .nsm.yaml file to get project_id
         project_id = self._get_project_id_from_yaml()
         if not project_id:
-            print("Error: No project_id found in .nsm.yaml file")
+            logger.error("No project_id found in .nsm.yaml file")
             sys.exit(1)
+        
+        # Check if a secret with the same name already exists
+        existing_resource_id = None
+        try:
+            existing_resources = self.current_client._execute_json_command(
+                "list", "resource", "--filter", f'Name == "{file}"'
+            )
+            if existing_resources:
+                if not force:
+                    logger.warning(f"A secret with name '{file}' already exists")
+                    logger.warning("Use --force to overwrite the existing secret")
+                    return
+                else:
+                    existing_resource_id = existing_resources[0]["id"]
+                    logger.warning(f"Updating existing secret '{file}' with ID: {existing_resource_id}")
+        except Exception as e:
+            logger.warning(f"Could not check for existing secrets: {e}")
         
         # Read the file content
         try:
             with open(file, 'r') as f:
                 secret_value = f.read().strip()
         except FileNotFoundError:
-            print(f"Error: File '{file}' not found")
+            logger.error(f"File '{file}' not found")
             sys.exit(1)
         except Exception as e:
-            print(f"Error: Failed to read file '{file}': {e}")
+            logger.error(f"Failed to read file '{file}': {e}")
             sys.exit(1)
         
-        # Create the secret in Passbolt
+        # Create or update the secret in Passbolt
         try:
-            cmd = ["create", "resource", "--name", file, "--password", secret_value, "-f", project_id]
-            result = self.current_client._execute_json_command(*cmd)
-            if result:
-                secret_id = result[0]["id"]
-                print(f"Secret '{file}' created with ID: {secret_id}")
-                
-                # Update .nsm.yaml file
-                self._add_secret_to_yaml(file, secret_id)
+            if existing_resource_id:
+                cmd = ["update", "resource", "--id", existing_resource_id, "--password", secret_value]
+                result = self.current_client._execute_command(*cmd)
+                logger.info(f"Secret '{file}' updated with ID: {existing_resource_id}")
+                self._add_secret_to_yaml(file, existing_resource_id)
             else:
-                print("Error: Failed to create secret - no result returned")
-                sys.exit(1)
+                cmd = ["create", "resource", "--name", file, "--password", secret_value, "-f", project_id]
+                result = self.current_client._execute_json_command(*cmd)
+                if result:
+                    secret_id = result["id"]
+                    logger.info(f"Secret '{file}' created with ID: {secret_id}")
+                    self._add_secret_to_yaml(file, secret_id)
+                else:
+                    logger.error("Failed to create secret - no result returned")
+                    sys.exit(1)
+        except PassboltCommandError as e:
+            logger.error(f"Failed to {'update' if existing_resource_id else 'create'} secret:")
+            logger.error(str(e))
+            sys.exit(1)
         except Exception as e:
-            print(f"Error: Failed to create secret: {e}")
+            logger.error(f"Failed to {'update' if existing_resource_id else 'create'} secret: {e}")
             sys.exit(1)
     
     def _get_project_id_from_yaml(self) -> Optional[str]:
@@ -383,12 +414,17 @@ class ProjectSecretCommands(BaseManager):
             import yaml
             with open(".nsm.yaml", 'r') as f:
                 data = yaml.safe_load(f)
-                return data.get('project_id')
+            
+            # Handle case where file is empty or contains only whitespace
+            if data is None:
+                return None
+            
+            return data.get('project_id')
         except FileNotFoundError:
-            print("Error: .nsm.yaml file not found")
+            logger.error(".nsm.yaml file not found")
             return None
         except Exception as e:
-            print(f"Error: Failed to read .nsm.yaml file: {e}")
+            logger.error(f"Failed to read .nsm.yaml file: {e}")
             return None
     
     def _add_secret_to_yaml(self, file_name: str, secret_id: str) -> None:
@@ -397,8 +433,8 @@ class ProjectSecretCommands(BaseManager):
             import yaml
             with open(".nsm.yaml", 'r') as f:
                 data = yaml.safe_load(f)
-            
-            if 'secrets' not in data:
+                        
+            if 'secrets' not in data or data['secrets'] is None:
                 data['secrets'] = {}
             
             data['secrets'][file_name] = secret_id
@@ -406,9 +442,9 @@ class ProjectSecretCommands(BaseManager):
             with open(".nsm.yaml", 'w') as f:
                 yaml.dump(data, f, default_flow_style=False)
             
-            print(f"Added secret '{file_name}' to .nsm.yaml file")
+            logger.info(f"Added secret '{file_name}' to .nsm.yaml file")
         except Exception as e:
-            print(f"Warning: Failed to update .nsm.yaml file: {e}")
+            logger.warning(f"Failed to update .nsm.yaml file: {e}")
     
     @require_provider
     def clean(self) -> None:
@@ -444,12 +480,12 @@ class ProjectSecretCommands(BaseManager):
         Restore all secret files from Passbolt using the IDs in .nsm.yaml.
         """
         if not isinstance(self.current_client, PassboltClient):
-            print("Error: Restore operation is currently only supported for Passbolt")
+            logger.error("Restore operation is currently only supported for Passbolt")
             sys.exit(1)
         
         secrets = self._get_secrets_from_yaml()
         if not secrets:
-            print("No secrets found in .nsm.yaml file")
+            logger.info("No secrets found in .nsm.yaml file")
             return
         
         restored_count = 0
@@ -459,16 +495,20 @@ class ProjectSecretCommands(BaseManager):
                 try:
                     output = self.current_client._execute_command("get", "resource", "--id", secret_id, "--json")
                     if not output:
-                        print(f"Error: Secret with ID '{secret_id}' not found in Passbolt")
+                        logger.error(f"Secret with ID '{secret_id}' not found in Passbolt")
                         continue
                     
                     secret_data = json.loads(output)
                     secret_value = secret_data.get("password", "")
+                except PassboltCommandError as e:
+                    logger.error(f"Error getting secret '{file_path}':")
+                    logger.error(str(e))
+                    continue
                 except Exception as e:
-                    print(f"Error getting secret '{file_path}': {e}")
+                    logger.error(f"Error getting secret '{file_path}': {e}")
                     continue
                 if not secret_value:
-                    print(f"Warning: Secret '{file_path}' has empty value")
+                    logger.warning(f"Secret '{file_path}' has empty value")
                 
                 # Create directory if it doesn't exist
                 file_dir = os.path.dirname(file_path)
@@ -479,13 +519,13 @@ class ProjectSecretCommands(BaseManager):
                 with open(file_path, 'w') as f:
                     f.write(secret_value)
                 
-                print(f"Restored file: {file_path}")
+                logger.info(f"Restored file: {file_path}")
                 restored_count += 1
                 
             except Exception as e:
-                print(f"Error restoring file '{file_path}': {e}")
+                logger.error(f"Error restoring file '{file_path}': {e}")
         
-        print(f"Restore operation completed. Restored {restored_count} files.")
+        logger.info(f"Restore operation completed. Restored {restored_count} files.")
     
     def _get_secrets_from_yaml(self) -> Dict[str, str]:
         """Get secrets dictionary from .nsm.yaml file."""
@@ -493,12 +533,17 @@ class ProjectSecretCommands(BaseManager):
             import yaml
             with open(".nsm.yaml", 'r') as f:
                 data = yaml.safe_load(f)
-                return data.get('secrets', {})
+            
+            # Handle case where file is empty or contains only whitespace
+            if data is None:
+                return {}
+            
+            return data.get('secrets', {})
         except FileNotFoundError:
-            print("Error: .nsm.yaml file not found")
+            logger.error(".nsm.yaml file not found")
             return {}
         except Exception as e:
-            print(f"Error: Failed to read .nsm.yaml file: {e}")
+            logger.error(f"Failed to read .nsm.yaml file: {e}")
             return {}
 
 
@@ -517,16 +562,16 @@ class ProjectCommands(BaseManager):
             # For Passbolt, use the organization root folder as parent
             provider_config = self.config.get_current_provider()
             if not provider_config or not provider_config.organization_root_folder:
-                print("Error: Passbolt provider requires organization_root_folder configuration")
+                logger.error("Passbolt provider requires organization_root_folder configuration")
                 sys.exit(1)
             
             folder = self.current_client.get_or_create_folder_by_name(name, provider_config.organization_root_folder)
-            print(f"Project '{name}' created: {folder['name']} ({folder['id']})")
+            logger.info(f"Project '{name}' created: {folder['name']} ({folder['id']})")
             
             # Create .nsm.yaml file in current directory
             self._create_nsm_yaml(name, folder['id'])
         else:
-            print("Error: Project creation is currently only supported for Passbolt")
+            logger.error("Project creation is currently only supported for Passbolt")
             sys.exit(1)
     
     def _create_nsm_yaml(self, project_name: str, project_id: str) -> None:
@@ -539,9 +584,9 @@ secrets:
         try:
             with open(".nsm.yaml", "w") as f:
                 f.write(yaml_content)
-            print(f"Created .nsm.yaml file for project '{project_name}'")
+            logger.info(f"Created .nsm.yaml file for project '{project_name}'")
         except Exception as e:
-            print(f"Warning: Failed to create .nsm.yaml file: {e}")
+            logger.warning(f"Failed to create .nsm.yaml file: {e}")
     
     def secret(self) -> ProjectSecretCommands:
         return ProjectSecretCommands(config=self.config, conf_file=self.conf_file)
@@ -553,13 +598,13 @@ class NillebCoSecretsManager(BaseManager):
         """List projects."""
         projects = self.current_client.list_projects()
         for project in projects:
-            print(f"{project.name} ({project.id}) (orgId: {project.organization_id})")
+            logger.info(f"{project.name} ({project.id}) (orgId: {project.organization_id})")
 
     @require_provider
     def organizations(self) -> None:
         """List organizations (Bitwarden-specific)."""
         for organization in self.current_client.list_organizations():
-            print(f"{organization.name} ({organization.id})")
+            logger.info(f"{organization.name} ({organization.id})")
 
     def provider(self) -> ProviderCommands:
         return ProviderCommands(config=self.config, conf_file=self.conf_file)
@@ -577,10 +622,10 @@ class NillebCoSecretsManager(BaseManager):
     def set_access_token(self, token: str) -> None:
         """Set the Bitwarden access token (Bitwarden-specific)."""
         if not isinstance(self.current_client, BitwardenClient):
-            print("Error: This command is only available for Bitwarden")
+            logger.error("This command is only available for Bitwarden")
             sys.exit(1)
         self.current_client.set_access_token(token)
-        print("Access token stored successfully")
+        logger.info("Access token stored successfully")
 
 
 def main():

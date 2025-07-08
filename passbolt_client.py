@@ -1,7 +1,24 @@
 import json
 import subprocess
+import logging
 from typing import List, Dict, Optional, Any
 from secrets_manager import SecretsManager, Project, Organization
+
+logger = logging.getLogger(__name__)
+
+
+class PassboltCommandError(Exception):
+    """Exception raised when a Passbolt command fails."""
+    
+    def __init__(self, command: str, return_code: int, stdout: str, stderr: str):
+        self.command = command
+        self.return_code = return_code
+        self.stdout = stdout
+        self.stderr = stderr
+        super().__init__(f"Passbolt command failed with return code {return_code}")
+    
+    def __str__(self) -> str:
+        return f"Passbolt command failed: {' '.join(self.command)}\nReturn code: {self.return_code}\nstdout: {self.stdout}\nstderr: {self.stderr}"
 
 
 class PassboltClient(SecretsManager):
@@ -22,12 +39,18 @@ class PassboltClient(SecretsManager):
 
     def _execute_command(self, *args: str) -> str:
         """Execute a passbolt command and return the output."""
-        try:
-            cmd = ["passbolt"] + list(args)
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            return result.stdout.strip()
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"Passbolt command failed: {e}")
+        cmd = ["passbolt"] + list(args)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            raise PassboltCommandError(
+                command=cmd,
+                return_code=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr
+            )
+        
+        return result.stdout.strip()
 
     def _execute_json_command(self, *args: str) -> List[Dict[str, Any]]:
         """Execute a passbolt command with --json flag and return parsed JSON."""
@@ -36,8 +59,11 @@ class PassboltClient(SecretsManager):
             if not output:
                 return []
             return json.loads(output)
-        except json.JSONDecodeError as e:
-            raise Exception(f"Failed to parse JSON response: {e}")
+        except PassboltCommandError:
+            # Re-raise the PassboltCommandError to preserve stdout/stderr
+            raise
+        except Exception as e:
+            raise Exception(f"Failed to execute JSON command: {e}")
 
     def list_organizations(self) -> List[Organization]:
         """List all organizations (folders in Passbolt terminology)."""
@@ -46,6 +72,9 @@ class PassboltClient(SecretsManager):
             return [
                 Organization(id=folder["id"], name=folder["name"]) for folder in folders
             ]
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to list organizations: {e}")
 
@@ -67,6 +96,9 @@ class PassboltClient(SecretsManager):
                 )
                 for folder in folders
             ]
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to list projects: {e}")
 
@@ -93,6 +125,9 @@ class PassboltClient(SecretsManager):
                 }
                 for resource in resources
             ]
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to list secrets: {e}")
 
@@ -112,7 +147,8 @@ class PassboltClient(SecretsManager):
                     "list",
                     "resource",
                     "--filter",
-                    f'(Name == "{name}" && FolderId == "{project_id}")',
+                    f'(Name == "{name}"',
+                    f"-f {project_id}"
                 ]
 
             resources = self._execute_json_command(*cmd)
@@ -128,6 +164,9 @@ class PassboltClient(SecretsManager):
 
             # Extract the password from the secret data
             return secret_data[0].get("password", "")
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to get secret '{name}': {e}")
 
@@ -157,6 +196,9 @@ class PassboltClient(SecretsManager):
                     cmd.extend(["--username", metadata["username"]])
 
             self._execute_command(*cmd)
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to store secret '{name}': {e}")
 
@@ -183,6 +225,9 @@ class PassboltClient(SecretsManager):
             # Delete the resource
             self._execute_command("delete", "resource", resource_id)
             return True
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to delete secret '{name}': {e}")
 
@@ -206,6 +251,9 @@ class PassboltClient(SecretsManager):
             if result:
                 return result[0]["id"]
             raise Exception("Failed to create folder - no ID returned")
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to create folder '{name}': {e}")
 
@@ -238,6 +286,9 @@ class PassboltClient(SecretsManager):
 
             # Create new folder if not found
             return self.create_folder(name, parent_folder_id)
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to get or create folder '{name}': {e}")
 
@@ -261,6 +312,9 @@ class PassboltClient(SecretsManager):
                 cmd.extend(["-f", parent_folder_id])
             
             return self._execute_json_command(*cmd)
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
         except Exception as e:
             raise Exception(f"Failed to list folders: {e}")
     
@@ -275,24 +329,34 @@ class PassboltClient(SecretsManager):
         Returns:
             Folder dictionary with ID and other details
         """
+        params = []
+        filter_expr = f'(Name == "{name}")'
+        if parent_folder_id:
+            params.extend(["-f", parent_folder_id])
+        params.extend(["--filter", filter_expr])
+
         try:
-            # Try to find existing folder
-            filter_expr = f'(Name == "{name}")'
-            if parent_folder_id:
-                filter_expr = f'(Name == "{name}" && FolderParentId == "{parent_folder_id}")'
-            
-            folders = self._execute_json_command("list", "folder", "--filter", filter_expr)
-            if folders:
-                return folders[0]
-            
-            # Create new folder if not found
-            cmd = ["create", "folder", "--name", name]
-            if parent_folder_id:
-                cmd.extend(["-f", parent_folder_id])
-            
+            folders = self._execute_json_command("list", "folder", *params)
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
+        except:
+            folders = []
+    
+        if folders:
+            return folders[0]
+        
+        cmd = ["create", "folder", "--name", name]
+        if parent_folder_id:
+            cmd.extend(["-f", parent_folder_id])
+        
+        try:
             result = self._execute_json_command(*cmd)
             if result:
-                return result[0]
-            raise Exception("Failed to create folder - no result returned")
-        except Exception as e:
-            raise Exception(f"Failed to get or create folder '{name}': {e}")
+                logger.info(result)
+                return result
+        except PassboltCommandError:
+            # Re-raise to preserve stdout/stderr
+            raise
+
+        raise Exception("Failed to create folder - no result returned")
