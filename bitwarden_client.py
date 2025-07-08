@@ -38,11 +38,16 @@ class BitwardenClient(SecretsManager):
         try:
             result = subprocess.run(
                 f"security find-generic-password -a none -s {secret_name} -w",
-                shell=True, check=True, capture_output=True, text=True
+                shell=True,
+                check=True,
+                capture_output=True,
+                text=True,
             )
             token = result.stdout.strip()
             if not token:
-                raise Exception(f"Access token not found in keychain for service '{secret_name}'")
+                raise Exception(
+                    f"Access token not found in keychain for service '{secret_name}'"
+                )
             return token
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to retrieve access token from keychain: {e}")
@@ -67,8 +72,7 @@ class BitwardenClient(SecretsManager):
             )
             organizations = json.loads(result.stdout)
             return [
-                Organization(id=org["id"], name=org["name"])
-                for org in organizations
+                Organization(id=org["id"], name=org["name"]) for org in organizations
             ]
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to list organizations: {e}")

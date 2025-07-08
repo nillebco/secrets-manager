@@ -6,9 +6,12 @@ from typing import Optional, Literal, Dict
 
 @dataclass
 class ProviderConfig:
-    type: Literal["bitwarden", "google"]
+    type: Literal["bitwarden", "google", "passbolt"]
     org: Optional[str] = None
     project_id: Optional[str] = None
+    server: Optional[str] = None
+    private_key_file: Optional[str] = None
+    organization_root_folder: Optional[str] = None
 
 
 @dataclass
@@ -45,13 +48,21 @@ class Configuration:
     def add_provider(
         self,
         name: str,
-        provider_type: Literal["bitwarden", "google"],
+        provider_type: Literal["bitwarden", "google", "passbolt"],
         org: Optional[str] = None,
         project_id: Optional[str] = None,
+        server: Optional[str] = None,
+        private_key_file: Optional[str] = None,
+        organization_root_folder: Optional[str] = None,
     ) -> None:
         """Add or update a provider configuration."""
         self.providers[name] = ProviderConfig(
-            type=provider_type, org=org, project_id=project_id
+            type=provider_type,
+            org=org,
+            project_id=project_id,
+            server=server,
+            private_key_file=private_key_file,
+            organization_root_folder=organization_root_folder,
         )
 
     def get_current_provider(self) -> Optional[ProviderConfig]:

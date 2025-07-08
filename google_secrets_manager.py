@@ -4,6 +4,7 @@ from typing import Optional, Any, Dict
 from secrets_manager import Organization, SecretsManager, Project
 import logging
 
+
 class GoogleSecretsManager(SecretsManager):
     """Implementation of SecretsManager using Google Cloud Secret Manager via gcloud CLI."""
 
