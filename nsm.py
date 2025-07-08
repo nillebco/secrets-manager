@@ -25,10 +25,13 @@ def require_provider(f: Callable[..., T]) -> Callable[..., T]:
 
 class BaseManager:
     """Base class for all manager classes providing configuration and client management."""
-    def __init__(self, conf_file: Optional[str] = None, config: Optional[Configuration] = None):
+
+    def __init__(
+        self, conf_file: Optional[str] = None, config: Optional[Configuration] = None
+    ):
         """
         Initialize the base manager.
-        
+
         Args:
             conf_file: Path to the configuration file. If not provided, uses default.
             config: Configuration object. If provided, uses this instead of loading from file.
@@ -76,8 +79,7 @@ class ProviderCommands(BaseManager):
         # Check if a Google provider already exists
         if provider == "google":
             existing_google = [
-                name for name, p in self.config.providers.items() 
-                if p.type == "google"
+                name for name, p in self.config.providers.items() if p.type == "google"
             ]
             if existing_google:
                 print(f"Error: A Google provider already exists: {existing_google[0]}")
@@ -125,6 +127,38 @@ class ProviderCommands(BaseManager):
                 print(f"{current} {name}: bitwarden")
             else:
                 print(f"{current} {name}: google")
+
+    def remove(self, name: str) -> None:
+        """
+        Remove a specific provider configuration.
+
+        Args:
+            name: Name of the provider configuration to remove
+        """
+        if name not in self.config.providers:
+            print(f"Error: Provider '{name}' not found")
+            sys.exit(1)
+
+        # If this is the current provider, clear the current provider
+        if self.config.current_provider == name:
+            self.config.current_provider = None
+
+        del self.config.providers[name]
+        self.config.save(self.conf_file)
+        self._set_restrictive_permissions()
+        print(f"Provider '{name}' removed successfully")
+
+    def remove_all(self) -> None:
+        """Remove all provider configurations."""
+        if not self.config.providers:
+            print("No providers configured")
+            return
+
+        provider_count = len(self.config.providers)
+        self.config.remove_all_providers()
+        self.config.save(self.conf_file)
+        self._set_restrictive_permissions()
+        print(f"Removed {provider_count} provider(s) successfully")
 
 
 class SecretsCommands(BaseManager):

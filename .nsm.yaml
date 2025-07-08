@@ -1,0 +1,42 @@
+# passbolt configure --serverAddress https://safe.tail961085.ts.net --userPassword "$PASSPHRASE" --userPrivateKeyFile '/Users/nilleb/Documents/passbolt-recovery-kit-safe.nilleb.com'
+# passbolt create folder --name "nillebco" --json
+# passbolt create folder --name "passbolt-server" -f 72447f98-436c-47e4-aff9-f2061f0812a8 --json
+# passbolt create resource -f ea899523-5132-41fe-ba86-9da5f609f5a3 --name ".env" -p "$(cat .env)" --json
+provider: passbolt
+server: safe.tail961085.ts.net
+# passbolt create folder --name "passbolt-server" -f 72447f98-436c-47e4-aff9-f2061f0812a8 --json
+# {
+#   "id": "ea899523-5132-41fe-ba86-9da5f609f5a3"
+# }
+parent_folder: 72447f98-436c-47e4-aff9-f2061f0812a8/ea899523-5132-41fe-ba86-9da5f609f5a3
+.env: 6e786cca-2fbf-4713-96cd-a8cf82601559
+terraform/configuration/.env: 797120eb-d0b3-43ed-8e26-918ceec955c5
+terraform/cloudflare.tfvars: a3ec4485-91fa-46d9-b3ff-fd6f27ab2582
+terraform/hetzner.tfvars: 949b20a2-05da-4475-ba6b-e111e8829189
+# passbolt create resource -f ea899523-5132-41fe-ba86-9da5f609f5a3 --name "terraform/tailscale.tfvars" -p "$(cat terraform/tailscale.tfvars)" --json
+# {
+#   "id": "88fc6d27-0ba0-41ec-a3df-8e7093e4bf95"
+# }
+terraform/tailscale.tfvars: 88fc6d27-0ba0-41ec-a3df-8e7093e4bf95
+
+# ❯ passbolt list folder --filter '(Name == "nillebco")' --json
+# [
+#   {
+#     "id": "72447f98-436c-47e4-aff9-f2061f0812a8",
+#     "folder_parent_id": "",
+#     "name": "nillebco",
+#     "created_timestamp": "2025-07-08T06:32:21Z",
+#     "modified_timestamp": "2025-07-08T06:32:21Z"
+#   }
+# ]
+# nsm config new --provider passbolt --server safe.tail961085.ts.net --keyfile '/Users/nilleb/Documents/passbolt-recovery-kit-safe.nilleb.com' --passphrase $(read -s -p "Enter passphrase: " passphrase && echo $passphrase)
+# org_folder=$(nsm folder get_or_create --name "nillebco")
+# nsm project create --name "passbolt-server" --folder $org_folder
+# nsm project secret add .env
+# nsm project secret add terraform/configuration/.env
+# nsm project secret add terraform/cloudflare.tfvars
+# nsm project secret add terraform/hetzner.tfvars
+# nsm project secret add terraform/tailscale.tfvars
+# now delete all the secret files and restore them with the following command
+# nsm project restore
+# nsm project clean

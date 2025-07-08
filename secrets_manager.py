@@ -2,9 +2,11 @@ from abc import ABC, abstractmethod
 from typing import Optional, Any, Dict
 from dataclasses import dataclass
 
+
 @dataclass
 class Organization:
     """Represents an organization in a secrets provider."""
+
     id: str
     name: str
 
