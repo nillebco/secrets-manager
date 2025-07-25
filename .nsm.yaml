@@ -1,0 +1,9 @@
+# sample configuration file
+provider: my-passbolt
+project_id: ea899523-5132-41fe-ba86-9da5f609f5a3
+secrets:
+  .env: 6e786cca-2fbf-4713-96cd-a8cf82601559
+  terraform/configuration/.env: 797120eb-d0b3-43ed-8e26-918ceec955c5
+  terraform/cloudflare.tfvars: a3ec4485-91fa-46d9-b3ff-fd6f27ab2582
+  terraform/hetzner.tfvars: 949b20a2-05da-4475-ba6b-e111e8829189
+  terraform/tailscale.tfvars: 88fc6d27-0ba0-41ec-a3df-8e7093e4bf95
